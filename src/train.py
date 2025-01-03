@@ -1,18 +1,17 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-import time
+import os
 from tqdm import tqdm
 
 def train_model(model, train_loader, val_loader, device, num_epochs=3):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=2e-5)
-    
-    model = model.to(device)
-    
+        
     for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
+        # Important: set epoch for sampler
+        train_loader.sampler.set_epoch(epoch)        
+        print(f"[Process {os.getpid()}] Epoch {epoch+1}/{num_epochs}")
         
         # Training phase
         model.train()
@@ -20,7 +19,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3):
         train_correct = 0
         train_total = 0
         
-        for batch in tqdm(train_loader, desc="Training"):
+        for batch in tqdm(train_loader, desc=f"[Process {os.getpid()}] Training"):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
@@ -39,8 +38,8 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3):
             train_correct += predicted.eq(labels).sum().item()
         
         train_accuracy = 100. * train_correct / train_total
-        print(f"Training Loss: {train_loss/len(train_loader):.4f}")
-        print(f"Training Accuracy: {train_accuracy:.2f}%")
+        print(f"[Process {os.getpid()}] Training Loss: {train_loss/len(train_loader):.4f}")
+        print(f"[Process {os.getpid()}] Training Accuracy: {train_accuracy:.2f}%")
         
         # Validation phase
         model.eval()
@@ -54,14 +53,17 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3):
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
                 
-                outputs = model(input_ids, attention_mask)
-                loss = criterion(outputs, labels)
+                logits = model(input_ids, attention_mask)
+                loss = criterion(logits, labels)
                 
                 val_loss += loss.item()
                 _, predicted = outputs.max(1)
                 val_total += labels.size(0)
                 val_correct += predicted.eq(labels).sum().item()
-        
-        val_accuracy = 100. * val_correct / val_total
-        print(f"Validation Loss: {val_loss/len(val_loader):.4f}")
-        print(f"Validation Accuracy: {val_accuracy:.2f}%")
+
+        if val_total > 0:
+            val_accuracy = 100. * val_correct / val_total
+            print(f"[Process {os.getpid()}] Validation Loss {val_loss/len(val_loader):.4f}")
+            print(f"[Process {os.getpid()}] Validation Accuracy {val_accuracy:.2f}%")
+        else:
+            print("Warning: No validation samples were processed")        

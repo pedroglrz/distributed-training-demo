@@ -23,7 +23,7 @@ class IMDBDataset(Dataset):
         self.max_length = max_length
 
     def preprocess(self, text):
-        print(f"[Process {os.getpid()}] Preprocessing review (first 50 chars): {text[:50]}...")
+        # print(f"[Process {os.getpid()}] Preprocessing review (first 50 chars): {text[:50]}...")
         
         # Tokenize and encode
         encoding = self.tokenizer.encode_plus(
