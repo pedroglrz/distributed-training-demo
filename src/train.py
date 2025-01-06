@@ -4,14 +4,14 @@ import torch.optim as optim
 import os
 from tqdm import tqdm
 
-def train_model(model, train_loader, val_loader, device, num_epochs=3):
+def train_model(model, train_loader, val_loader, device, num_epochs,logger):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=2e-5)
         
     for epoch in range(num_epochs):
         # Important: set epoch for sampler
         train_loader.sampler.set_epoch(epoch)        
-        print(f"[Process {os.getpid()}] Epoch {epoch+1}/{num_epochs}")
+        logger.log(f"[Process {os.getpid()}] Epoch {epoch+1}/{num_epochs}")
         
         # Training phase
         model.train()
@@ -38,8 +38,8 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3):
             train_correct += predicted.eq(labels).sum().item()
         
         train_accuracy = 100. * train_correct / train_total
-        print(f"[Process {os.getpid()}] Training Loss: {train_loss/len(train_loader):.4f}")
-        print(f"[Process {os.getpid()}] Training Accuracy: {train_accuracy:.2f}%")
+        logger.log(f"[Process {os.getpid()}] Training Loss: {train_loss/len(train_loader):.4f}")
+        logger.log(f"[Process {os.getpid()}] Training Accuracy: {train_accuracy:.2f}%")
         
         # Validation phase
         model.eval()
@@ -63,7 +63,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs=3):
 
         if val_total > 0:
             val_accuracy = 100. * val_correct / val_total
-            print(f"[Process {os.getpid()}] Validation Loss {val_loss/len(val_loader):.4f}")
-            print(f"[Process {os.getpid()}] Validation Accuracy {val_accuracy:.2f}%")
+            logger.log(f"[Process {os.getpid()}] Validation Loss {val_loss/len(val_loader):.4f}")
+            logger.log(f"[Process {os.getpid()}] Validation Accuracy {val_accuracy:.2f}%")
         else:
-            print("Warning: No validation samples were processed")        
+            logger.log("Warning: No validation samples were processed")        

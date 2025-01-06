@@ -9,33 +9,38 @@ from torch.nn.parallel import DistributedDataParallel
 from model import TransformerClassifier
 from train import train_model
 from imdb_dataset import IMDBDataset
+from logging_utils import ProcessLogger
+
+logger = ProcessLogger()
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
-    print(f"[Process {os.getpid()}] Initialized process group")
+    logger.log(f"[Process {os.getpid()}] Initialized process group")
 
 def cleanup():
     dist.destroy_process_group()
 
-def train_process(rank, world_size, model_name, max_length, batch_size, num_epochs):
+def train_process(rank, world_size, model_name, max_length, batch_size, num_epochs,logger):
     # Initialize process group
     setup(rank, world_size)
     
     # Create datasets
-    print(f"[Process {os.getpid()}] Creating datasets...")
+    logger.log(f"[Process {os.getpid()}] Creating datasets...")
     train_dataset = IMDBDataset(
         split="train",
         max_length=max_length,
         subset_size=100,  # Adjust as needed
-        model_name=model_name
+        model_name=model_name,
+        logger = logger
     )
     val_dataset = IMDBDataset(
         split="test",
         max_length=max_length,
         subset_size=10,  # Adjust as needed
-        model_name=model_name
+        model_name=model_name,
+        logger=logger,
     )
 
     # Create samplers
@@ -65,7 +70,7 @@ def train_process(rank, world_size, model_name, max_length, batch_size, num_epoc
 
     # Train model
     device = torch.device("cpu")  # Using CPU for this example
-    train_model(model, train_loader, val_loader, device, num_epochs=num_epochs)
+    train_model(model, train_loader, val_loader, device, num_epochs, logger)
     cleanup()
 
 def main():
@@ -77,14 +82,14 @@ def main():
     world_size = 3  # Number of processes
 
     # Download model and tokenizer once to avoid multiple downloads
-    print(f"[Process {os.getpid()}] Downloading model and tokenizer...")
+    logger.log(f"[Process {os.getpid()}] Downloading model and tokenizer...")
     _ = TransformerClassifier(model_name=model_name)
     
     # Launch processes
-    print(f"[Process {os.getpid()}] Launching {world_size} processes...")
+    logger.log(f"[Process {os.getpid()}] Launching {world_size} processes...")
     mp.spawn(
         train_process,
-        args=(world_size, model_name, max_length, batch_size, num_epochs),
+        args=(world_size, model_name, max_length, batch_size, num_epochs,logger),
         nprocs=world_size
     )
 
