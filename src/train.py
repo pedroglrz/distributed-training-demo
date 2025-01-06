@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import os
 from tqdm import tqdm
+import torch.distributed as dist
 
 def train_model(model, train_loader, val_loader, device, num_epochs,logger):
     criterion = nn.CrossEntropyLoss()
@@ -38,8 +39,17 @@ def train_model(model, train_loader, val_loader, device, num_epochs,logger):
             train_correct += predicted.eq(labels).sum().item()
         
         train_accuracy = 100. * train_correct / train_total
-        logger.log(f"[Process {os.getpid()}] Training Loss: {train_loss/len(train_loader):.4f}")
-        logger.log(f"[Process {os.getpid()}] Training Accuracy: {train_accuracy:.2f}%")
+
+        # Add after calculating train_loss, train_correct, etc:
+        train_loss_tensor = torch.tensor([train_loss]).to(device)
+        dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.SUM)
+        train_loss = train_loss_tensor.item() / dist.get_world_size()
+
+        # Only print on main process
+        if dist.get_rank() == 0:
+            logger.log(f"Training Loss: {train_loss:.4f}")                
+            logger.log(f"Training Accuracy: {train_accuracy:.2f}%")
+
         
         # Validation phase
         model.eval()
