@@ -20,4 +20,4 @@ class TransformerClassifier(nn.Module):
         )
         pooled_output = outputs.last_hidden_state[:, 0, :]  # Use [CLS] token for classification
         logits = self.classifier(pooled_output)
-        return logits
+        return logits 
