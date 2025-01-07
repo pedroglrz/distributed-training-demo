@@ -26,13 +26,13 @@ def train_process(rank, world_size, model_name, max_length, batch_size, num_epoc
     train_dataset = IMDBDataset(
         split="train",
         max_length=max_length,
-        subset_size=100,  # Adjust as needed
+        subset_size=1000,  # Adjust as needed
         model_name=model_name,
     )
     val_dataset = IMDBDataset(
         split="test",
         max_length=max_length,
-        subset_size=10,  # Adjust as needed
+        subset_size=100,  # Adjust as needed
         model_name=model_name,
     )
 
@@ -59,7 +59,8 @@ def train_process(rank, world_size, model_name, max_length, batch_size, num_epoc
     # Create model
     device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
     model = TransformerClassifier(model_name=model_name).to(device)
-    model = DistributedDataParallel(model, device_ids=[rank])
+    model = DistributedDataParallel(model)
+
 
     # Train model
     train_model(model, train_loader, val_loader, device, num_epochs)
@@ -73,9 +74,6 @@ def main():
     num_epochs = 2
     world_size = 2  # Number of processes
 
-    # Set backend based on device
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'    
 
     mp.spawn(
         train_process,

@@ -86,5 +86,5 @@ def train_model(model, train_loader, val_loader, device, num_epochs):
         if val_total > 0:
             val_accuracy = 100. * val_correct / val_total
             if dist.get_rank() == 0:  # Only print on main process
-                logger.log(f"Validation Loss: {val_loss:.4f}")
-                logger.log(f"Validation Accuracy: {val_accuracy:.2f}%")
+                print(f"Validation Loss: {val_loss:.4f}")
+                print(f"Validation Accuracy: {val_accuracy:.2f}%")
