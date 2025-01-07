@@ -3,51 +3,55 @@ import os
 import torch
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
-
+import gc
 
 class IMDBDataset(Dataset):
-    def __init__(self, split="train", max_length=512, subset_size=1000, model_name="bert-base-uncased",logger = None):
-        logger.log(f"[Process {os.getpid()}] Initializing IMDBDataset")
-
-        # Load data
-        dataset = load_dataset("imdb")[split]
-
-        # subset data
-        self.texts = dataset["text"][:subset_size]
-        self.labels = dataset["label"][:subset_size]
+    def __init__(self, split="train", max_length=256, subset_size=256, model_name="distilbert-base-uncased"):
+        print(f"[Process {os.getpid()}] Initializing IMDBDataset")
         
-        logger.log(f"[Process {os.getpid()}] Loaded {len(self.texts)} reviews")
+        # Load data in smaller chunks
+        dataset = load_dataset("imdb", split=f"{split}[:{subset_size}]")
         
-        # Initialize tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # Convert to list and clear cache
+        self.texts = dataset["text"]
+        self.labels = dataset["label"]
+        del dataset
+        gc.collect()
+        
+        print(f"[Process {os.getpid()}] Loaded {len(self.texts)} reviews")
+        
+        # Initialize tokenizer with reduced memory footprint
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            model_max_length=max_length,
+            padding_side='right',
+            truncation_side='right',
+        )
         self.max_length = max_length
 
     def preprocess(self, text):
-        # logger.log(f"[Process {os.getpid()}] Preprocessing review (first 50 chars): {text[:50]}...")
-        
-        # Tokenize and encode
-        encoding = self.tokenizer.encode_plus(
+        # More memory-efficient tokenization
+        encoding = self.tokenizer(
             text,
-            add_special_tokens=True,
             max_length=self.max_length,
             padding='max_length',
             truncation=True,
-            return_tensors='pt'
+            return_tensors=None,  # Return python lists instead of tensors
         )
         
+        # Convert to tensors only when needed
         return {
-            'input_ids': encoding['input_ids'].flatten(),
-            'attention_mask': encoding['attention_mask'].flatten()
+            'input_ids': torch.tensor(encoding['input_ids'], dtype=torch.long),
+            'attention_mask': torch.tensor(encoding['attention_mask'], dtype=torch.long)
         }
 
     def __len__(self):
         return len(self.texts)
 
     def __getitem__(self, idx):
-        # logger.log(f"Process {os.getpid()} accessing index {idx}...")
         text = self.texts[idx]
         label = self.labels[idx]
-
+        
         processed = self.preprocess(text)
         return {
             'input_ids': processed['input_ids'],
