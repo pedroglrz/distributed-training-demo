@@ -1,16 +1,13 @@
 #!/bin/bash
 
-# Configuration for AWS instances
-MASTER_IP="172.31.21.7"  # Replace with dlp-node-0's private IP
-NODE_RANK=$1          # Will be 0 for master node, 1 for worker
+# Configuration for local testing
+MASTER_IP="localhost"  # Using localhost for single-machine testing
+NODE_RANK=$1          # Will be 0 for first process, 1 for second
 NUM_NODES=2
 PROCS_PER_NODE=1
 MASTER_PORT=12355
 
-# Activate virtual environment if needed
-# source venv/bin/activate
-
-# Launch training
+# Launch training with correct path to main.py
 python -m torch.distributed.launch \
     --nnodes=$NUM_NODES \
     --node_rank=$NODE_RANK \
