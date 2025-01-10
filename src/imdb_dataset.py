@@ -6,7 +6,7 @@ from transformers import AutoTokenizer
 import gc
 
 class IMDBDataset(Dataset):
-    def __init__(self, split="train", max_length=256, subset_size=256, model_name="distilbert-base-uncased"):
+    def __init__(self, split="train", max_length=256, subset_size=256, model_name="distilbert-base-uncased",verbose = False):
         print(f"[Process {os.getpid()}] Initializing IMDBDataset")
         
         # Load data in smaller chunks
@@ -15,10 +15,12 @@ class IMDBDataset(Dataset):
         # Convert to list and clear cache
         self.texts = dataset["text"]
         self.labels = dataset["label"]
+        self.verbose = verbose
         del dataset
         gc.collect()
         
-        print(f"[Process {os.getpid()}] Loaded {len(self.texts)} reviews")
+        if self.verbose = True:
+            print(f"[Process {os.getpid()}] Loaded {len(self.texts)} reviews")
         
         # Initialize tokenizer with reduced memory footprint
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -54,7 +56,8 @@ class IMDBDataset(Dataset):
         
         processed = self.preprocess(text)
         # Add logging
-        print(f"Dataset accessing index: {idx}")
+        if self.verbose = True:
+            print(f"Dataset accessing index: {idx}")
         return {
             'input_ids': processed['input_ids'],
             'attention_mask': processed['attention_mask'],
