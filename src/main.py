@@ -20,15 +20,23 @@ def setup():
 def cleanup():
     dist.destroy_process_group()
 
+
 def main():
+    # The launcher sets LOCAL_RANK and WORLD_SIZE environment variables
     local_rank = int(os.environ["LOCAL_RANK"])
+    node_rank = int(os.environ["NODE_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
-    
-    # Add this logging
-    print(f"Process {os.getpid()} initializing with rank {local_rank} out of {world_size}")
     
     # Setup distributed
     setup()
+    
+    # Add detailed logging
+    print(f"Process started with:")
+    print(f"- Local Rank: {local_rank}")
+    print(f"- Node Rank: {node_rank}")
+    print(f"- World Size: {world_size}")
+    print(f"- Master addr: {os.environ.get('MASTER_ADDR')}")
+    print(f"- Master port: {os.environ.get('MASTER_PORT')}")
     
     # Model parameters
     model_name = "distilbert-base-uncased"

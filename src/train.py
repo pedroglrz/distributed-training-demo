@@ -32,6 +32,12 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
     rank = dist.get_rank()
     timestamp = setup_logging(rank)
     
+    # Add sampler verification at the start
+    logging.info(f"{rank} - Verifying sampler configuration:")
+    logging.info(f"{rank} - Sampler shuffle: {train_loader.sampler.shuffle}")
+    logging.info(f"{rank} - Sampler num_replicas: {train_loader.sampler.num_replicas}")
+    logging.info(f"{rank} - Sampler rank: {train_loader.sampler.rank}")
+    
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
     
@@ -41,13 +47,15 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
         'timestamp': timestamp,
         'epochs': []
     }
-
+    
     for epoch in range(num_epochs):
+        # Reset sampler for each epoch and log indices
         train_loader.sampler.set_epoch(epoch)
+        indices = list(train_loader.sampler)[:10]
+        logging.info(f"{rank} - Epoch {epoch+1} first 10 indices: {indices}")
         
-        # Add this logging
-        indices = list(train_loader.sampler)
-        logging.info(f"{rank} - Epoch {epoch+1} indices: {indices[:10]}...")    
+        # Log start of epoch for each process
+        logging.info(f"{rank} - Starting epoch {epoch+1}/{num_epochs}")
         
         # Training phase
         model.train()
@@ -63,13 +71,17 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
             if batch_idx % 5 == 0:
                 progress = (batch_idx + 1) / total_batches * 100
                 logging.info(f"{rank} - Progress: {progress:.1f}% [{batch_idx + 1}/{total_batches}]")
-                logging.info(f"Node {rank} - Processing batch {batch_idx}")
-                logging.info(f"{rank} - input_ids: \n{input_ids}")
-                logging.info(f"{rank} - labels: {labels}")                
+                # Log the actual data being processed
+                logging.info(f"{rank} - Processing batch {batch_idx}, indices: {indices[batch_idx:batch_idx+train_loader.batch_size]}")
             
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
+            
+            # Log input data for verification
+            if batch_idx % 5 == 0:
+                logging.info(f"{rank} - Sample input_ids from batch {batch_idx}:\n{input_ids[0][:10]}...")
+                logging.info(f"{rank} - Sample labels from batch {batch_idx}: {labels}")
             
             outputs = model(input_ids, attention_mask)
             loss = criterion(outputs, labels) / gradient_accumulation_steps
@@ -88,9 +100,8 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
             del outputs, loss, input_ids, attention_mask, labels
             gc.collect()
 
-
         # Calculate rank-specific metrics
-        avg_rank_train_loss = train_loss / train_total  # Average loss per example for this rank
+        avg_rank_train_loss = train_loss / train_total
         rank_train_accuracy = 100. * train_correct / train_total if train_total > 0 else 0
         
         # Prepare tensors for synchronization
@@ -104,7 +115,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
         dist.all_reduce(total_correct_tensor, op=dist.ReduceOp.SUM)
         
         # Calculate combined metrics
-        combined_train_loss = total_loss_tensor.item() / total_examples_tensor.item()  # Average loss per example across all ranks
+        combined_train_loss = total_loss_tensor.item() / total_examples_tensor.item()
         combined_train_accuracy = 100. * total_correct_tensor.item() / total_examples_tensor.item()
 
         # Validation phase
@@ -130,7 +141,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
                 del outputs, loss, input_ids, attention_mask, labels
         
         # Calculate rank-specific validation metrics
-        avg_rank_val_loss = val_loss / val_total  # Average loss per example for this rank
+        avg_rank_val_loss = val_loss / val_total
         rank_val_accuracy = 100. * val_correct / val_total if val_total > 0 else 0
         
         # Prepare tensors for synchronization
@@ -144,10 +155,10 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
         dist.all_reduce(total_val_correct_tensor, op=dist.ReduceOp.SUM)
         
         # Calculate combined validation metrics
-        combined_val_loss = total_val_loss_tensor.item() / total_val_examples_tensor.item()  # Average loss per example across all ranks
+        combined_val_loss = total_val_loss_tensor.item() / total_val_examples_tensor.item()
         combined_val_accuracy = 100. * total_val_correct_tensor.item() / total_val_examples_tensor.item()
 
-        #logging
+        # Logging
         logging.info(f"{rank} - Epoch {epoch+1} Avg Training Loss per example: {avg_rank_train_loss:.4f}, Accuracy: {rank_train_accuracy:.2f}%")
         logging.info(f"{rank} - Epoch {epoch+1} Avg Validation Loss per example: {avg_rank_val_loss:.4f}, Accuracy: {rank_val_accuracy:.2f}%")
         logging.info(f"Combined - Epoch {epoch+1} Avg Training Loss per example: {combined_train_loss:.4f}, Accuracy: {combined_train_accuracy:.2f}%")
