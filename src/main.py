@@ -87,6 +87,15 @@ def main():
         drop_last=True        
     )
 
+    #log
+    if local_rank == 0:
+    print(f"Total dataset size: {len(train_dataset)}")
+    print(f"Samples per process: {len(train_loader)}")
+    
+    # Print first few indices that this process will handle
+    indices = list(train_loader.sampler)[:5]
+    print(f"First 5 indices for process {local_rank}: {indices}")    
+
     # Create model
     model = TransformerClassifier(model_name=model_name).to(device)
     
