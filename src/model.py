@@ -9,13 +9,14 @@ class TransformerClassifier(nn.Module):
         
         # Load config first
         config = AutoConfig.from_pretrained(model_name)
-        config.gradient_checkpointing = True  # Enable gradient checkpointing
+        # Only use gradient checkpointing if we're not freezing BERT
+        config.gradient_checkpointing = not freeze_bert
         
         # Load model with memory optimizations
         self.transformer = AutoModel.from_pretrained(
             model_name,
             config=config,
-            torch_dtype=torch.float32,  # Use fp32 instead of fp16
+            torch_dtype=torch.float32,
         )
         
         # Free up memory
@@ -32,9 +33,12 @@ class TransformerClassifier(nn.Module):
             # Ensure classifier parameters are trainable
             for param in self.classifier.parameters():
                 param.requires_grad = True
+                
+            print("Parameter gradients status:")
+            print(f"- Transformer requires_grad: {any(p.requires_grad for p in self.transformer.parameters())}")
+            print(f"- Classifier requires_grad: {any(p.requires_grad for p in self.classifier.parameters())}")
         
     def forward(self, input_ids, attention_mask):
-        # Regular forward pass without gradient context manager
         outputs = self.transformer(
             input_ids=input_ids,
             attention_mask=attention_mask
