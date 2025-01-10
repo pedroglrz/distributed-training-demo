@@ -53,6 +53,8 @@ class IMDBDataset(Dataset):
         label = self.labels[idx]
         
         processed = self.preprocess(text)
+        # Add logging
+        print(f"Dataset accessing index: {idx}")
         return {
             'input_ids': processed['input_ids'],
             'attention_mask': processed['attention_mask'],

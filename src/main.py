@@ -16,13 +16,16 @@ def setup():
     dist.init_process_group("gloo")
     torch.set_num_threads(1)
 
+
 def cleanup():
     dist.destroy_process_group()
 
 def main():
-    # The launcher sets LOCAL_RANK and WORLD_SIZE environment variables
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
+    
+    # Add this logging
+    print(f"Process {os.getpid()} initializing with rank {local_rank} out of {world_size}")
     
     # Setup distributed
     setup()

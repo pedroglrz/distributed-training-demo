@@ -41,12 +41,13 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
         'timestamp': timestamp,
         'epochs': []
     }
-    
+
     for epoch in range(num_epochs):
         train_loader.sampler.set_epoch(epoch)
         
-        # Log start of epoch for each process
-        logging.info(f"{rank} - Starting epoch {epoch+1}/{num_epochs}")
+        # Add this logging
+        indices = list(train_loader.sampler)
+        logging.info(f"{rank} - Epoch {epoch+1} indices: {indices[:10]}...")    
         
         # Training phase
         model.train()
@@ -63,6 +64,8 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
                 progress = (batch_idx + 1) / total_batches * 100
                 logging.info(f"{rank} - Progress: {progress:.1f}% [{batch_idx + 1}/{total_batches}]")
                 logging.info(f"Node {rank} - Processing batch {batch_idx}")
+                logging.info(f"{rank} - input_ids: \n{input_ids}")
+                logging.info(f"{rank} - labels: {labels}")                
             
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
