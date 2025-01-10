@@ -32,11 +32,8 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
     rank = dist.get_rank()
     timestamp = setup_logging(rank)
     
-    # Add sampler verification at the start
-    logging.info(f"{rank} - Verifying sampler configuration:")
-    logging.info(f"{rank} - Sampler shuffle: {train_loader.sampler.shuffle}")
-    logging.info(f"{rank} - Sampler num_replicas: {train_loader.sampler.num_replicas}")
-    logging.info(f"{rank} - Sampler rank: {train_loader.sampler.rank}")
+    # Log sampler configuration once at start
+    logging.info(f"{rank} - Sampler config: shuffle={train_loader.sampler.shuffle}, replicas={train_loader.sampler.num_replicas}, rank={train_loader.sampler.rank}")
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
@@ -49,12 +46,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
     }
     
     for epoch in range(num_epochs):
-        # Reset sampler for each epoch and log indices
         train_loader.sampler.set_epoch(epoch)
-        indices = list(train_loader.sampler)[:10]
-        logging.info(f"{rank} - Epoch {epoch+1} first 10 indices: {indices}")
-        
-        # Log start of epoch for each process
         logging.info(f"{rank} - Starting epoch {epoch+1}/{num_epochs}")
         
         # Training phase
@@ -64,24 +56,23 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
         train_total = 0
         optimizer.zero_grad()
         
-        # Custom progress tracking
+        # Progress tracking
         total_batches = len(train_loader)
         for batch_idx, batch in enumerate(train_loader):
-            # Log progress every few batches
+            # Log sample of processed data every 5 batches
             if batch_idx % 5 == 0:
                 progress = (batch_idx + 1) / total_batches * 100
-                logging.info(f"{rank} - Progress: {progress:.1f}% [{batch_idx + 1}/{total_batches}]")
-                # Log the actual data being processed
-                logging.info(f"{rank} - Processing batch {batch_idx}, indices: {indices[batch_idx:batch_idx+train_loader.batch_size]}")
+                # Get first token sequences for display (first 5 tokens)
+                sample_tokens = batch["input_ids"][0][:5].tolist()
+                sample_label = batch["label"][0].item()
+                logging.info(
+                    f"{rank} - Progress: {progress:.1f}% [{batch_idx + 1}/{total_batches}] "
+                    f"Sample: tokens={sample_tokens}, label={sample_label}"
+                )
             
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
-            
-            # Log input data for verification
-            if batch_idx % 5 == 0:
-                logging.info(f"{rank} - Sample input_ids from batch {batch_idx}:\n{input_ids[0][:10]}...")
-                logging.info(f"{rank} - Sample labels from batch {batch_idx}: {labels}")
             
             outputs = model(input_ids, attention_mask)
             loss = criterion(outputs, labels) / gradient_accumulation_steps
@@ -158,11 +149,17 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
         combined_val_loss = total_val_loss_tensor.item() / total_val_examples_tensor.item()
         combined_val_accuracy = 100. * total_val_correct_tensor.item() / total_val_examples_tensor.item()
 
-        # Logging
-        logging.info(f"{rank} - Epoch {epoch+1} Avg Training Loss per example: {avg_rank_train_loss:.4f}, Accuracy: {rank_train_accuracy:.2f}%")
-        logging.info(f"{rank} - Epoch {epoch+1} Avg Validation Loss per example: {avg_rank_val_loss:.4f}, Accuracy: {rank_val_accuracy:.2f}%")
-        logging.info(f"Combined - Epoch {epoch+1} Avg Training Loss per example: {combined_train_loss:.4f}, Accuracy: {combined_train_accuracy:.2f}%")
-        logging.info(f"Combined - Epoch {epoch+1} Validation Loss per example: {combined_val_loss:.4f}, Accuracy: {combined_val_accuracy:.2f}%")
+        # Simplified logging - one line per metric group
+        logging.info(
+            f"{rank} - Epoch {epoch+1} Training: "
+            f"Loss={avg_rank_train_loss:.4f}, Acc={rank_train_accuracy:.2f}% | "
+            f"Val: Loss={avg_rank_val_loss:.4f}, Acc={rank_val_accuracy:.2f}%"
+        )
+        logging.info(
+            f"Combined - Epoch {epoch+1} Training: "
+            f"Loss={combined_train_loss:.4f}, Acc={combined_train_accuracy:.2f}% | "
+            f"Val: Loss={combined_val_loss:.4f}, Acc={combined_val_accuracy:.2f}%"
+        )
 
         # Store epoch results
         epoch_results = {
