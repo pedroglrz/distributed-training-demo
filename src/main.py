@@ -32,24 +32,17 @@ def setup_logging() -> None:
     )
 
 def setup_distributed() -> None:
-    """Initialize the distributed training environment.
-    
-    Ensures all required environment variables are set and initializes the
-    process group for distributed training.
-    """
-    # Set default environment variables if not present
+    """Initialize the distributed training environment."""
     os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT', '12355')
     os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR', 'localhost')
     os.environ['WORLD_SIZE'] = os.environ.get('WORLD_SIZE', '2')
     os.environ['RANK'] = os.environ.get('RANK', '0')
     
-    # Initialize the process group
     dist.init_process_group(
         "gloo",
         timeout=datetime.timedelta(minutes=30)
     )
     
-    # Set deterministic behavior
     torch.manual_seed(42)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(42)
@@ -59,16 +52,11 @@ def cleanup_distributed() -> None:
     dist.destroy_process_group()
 
 def get_rank_info() -> Tuple[int, int, int, int]:
-    """Get process rank information for distributed training.
-    
-    Returns:
-        Tuple containing local_rank, node_rank, global_rank, and world_size
-    """
+    """Get process rank information for distributed training."""
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     node_rank = int(os.environ.get("NODE_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     
-    # Calculate global rank
     procs_per_node = int(os.environ.get("NPROC_PER_NODE", 1))
     global_rank = node_rank * procs_per_node + local_rank
     
@@ -81,19 +69,7 @@ def create_dataloaders(
     max_length: int,
     model_name: str
 ) -> Tuple[DataLoader, DataLoader]:
-    """Create distributed DataLoaders for training and validation.
-    
-    Args:
-        global_rank: Global rank of current process
-        world_size: Total number of processes
-        batch_size: Batch size per process
-        max_length: Maximum sequence length
-        model_name: Name of pretrained model for tokenization
-        
-    Returns:
-        Tuple of (train_loader, val_loader)
-    """
-    # Create datasets
+    """Create distributed DataLoaders for training and validation."""
     train_dataset = IMDBDataset(
         split="train",
         max_length=max_length,
@@ -107,7 +83,6 @@ def create_dataloaders(
         model_name=model_name,
     )
 
-    # Create distributed samplers
     train_sampler = DistributedSampler(
         train_dataset,
         num_replicas=world_size,
@@ -122,7 +97,6 @@ def create_dataloaders(
         shuffle=False
     )
 
-    # Create and return dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -140,23 +114,22 @@ def create_dataloaders(
         drop_last=True        
     )
     
-    logger.info(f"Dataset sizes - Total: {len(train_dataset)}, "
-                f"Samples per process: {len(train_loader)}")
+    logger.info(f"Total dataset size: {len(train_dataset)}")
+    logger.info(f"Samples per process: {len(train_loader)}")
+
+    # Print first few indices that this process will handle
+    indices = list(train_loader.sampler)[:5]
+    logger.info(f"First 5 indices for process {global_rank}: {indices}")
     
     return train_loader, val_loader
 
 def main() -> None:
     """Main entry point for distributed training."""
-    # Setup logging
     setup_logging()
-    
-    # Initialize distributed environment
     setup_distributed()
     
-    # Get rank information
     local_rank, node_rank, global_rank, world_size = get_rank_info()
     
-    # Log distributed setup
     logger.info(
         f"Distributed setup:\n"
         f"- Local Rank: {local_rank}\n"
@@ -167,23 +140,19 @@ def main() -> None:
         f"- Master port: {os.environ.get('MASTER_PORT')}"
     )
     
-    # Training parameters
     model_name = "distilbert-base-uncased"
     max_length = 256
     batch_size = 4
     num_epochs = 2
     
-    # Set device
     device = torch.device('cpu')
     if global_rank == 0:
         logger.info(f"Training on device: {device}")
     
-    # Create dataloaders
     train_loader, val_loader = create_dataloaders(
         global_rank, world_size, batch_size, max_length, model_name
     )
     
-    # Create and wrap model in DDP
     model = TransformerClassifier(model_name=model_name).to(device)
     model = DistributedDataParallel(
         model,
@@ -191,9 +160,8 @@ def main() -> None:
         output_device=None
     )
 
-    # Train model
     try:
-        train_model(model, train_loader, val_loader, device, num_epochs)
+        train_model(model, train_loader, val_loader, device, num_epochs, global_rank)
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
         raise
