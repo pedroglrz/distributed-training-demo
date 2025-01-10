@@ -22,19 +22,23 @@ class TransformerClassifier(nn.Module):
         gc.collect()
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
         
+        # Initialize classifier
         self.classifier = nn.Linear(self.transformer.config.hidden_size, num_classes)
         
         if freeze_bert:
-            # Freeze transformer parameters to reduce memory usage
+            # Freeze transformer parameters
             for param in self.transformer.parameters():
                 param.requires_grad = False
+            # Ensure classifier parameters are trainable
+            for param in self.classifier.parameters():
+                param.requires_grad = True
         
     def forward(self, input_ids, attention_mask):
-        with torch.set_grad_enabled(not self.transformer.training):
-            outputs = self.transformer(
-                input_ids=input_ids,
-                attention_mask=attention_mask
-            )
+        # Regular forward pass without gradient context manager
+        outputs = self.transformer(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
         pooled_output = outputs[0][:, 0, :]
         logits = self.classifier(pooled_output)
         
