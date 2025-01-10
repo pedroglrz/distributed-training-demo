@@ -62,6 +62,7 @@ def train_model(model, train_loader, val_loader, device, num_epochs, gradient_ac
             if batch_idx % 5 == 0:
                 progress = (batch_idx + 1) / total_batches * 100
                 logging.info(f"{rank} - Progress: {progress:.1f}% [{batch_idx + 1}/{total_batches}]")
+                logging.info(f"Node {rank} - Processing batch {batch_idx}")
             
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
