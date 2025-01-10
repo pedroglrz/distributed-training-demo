@@ -18,6 +18,11 @@ if [ -z "$NODE_RANK" ]; then
     exit 1
 fi
 
+# Export necessary environment variables
+export NODE_RANK=$NODE_RANK
+export MASTER_ADDR=$MASTER_IP
+export MASTER_PORT=$MASTER_PORT
+
 # Log the configuration
 echo "Starting distributed training with:"
 echo "- Master IP: $MASTER_IP"
@@ -26,8 +31,8 @@ echo "- Num Nodes: $NUM_NODES"
 echo "- Processes per Node: $PROCS_PER_NODE"
 echo "- Master Port: $MASTER_PORT"
 
-# Launch training with explicit environment variables
-NCCL_DEBUG=INFO python -m torch.distributed.launch \
+# Launch training using torchrun
+torchrun \
     --nnodes=$NUM_NODES \
     --node_rank=$NODE_RANK \
     --nproc_per_node=$PROCS_PER_NODE \

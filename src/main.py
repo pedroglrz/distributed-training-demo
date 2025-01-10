@@ -8,24 +8,38 @@ from torch.utils.data.distributed import DistributedSampler
 from model import TransformerClassifier
 from train import train_model
 from imdb_dataset import IMDBDataset
+from datetime import datetime
 
 def setup():
     """
     Initialize the distributed environment.
     """
-    dist.init_process_group("gloo")
-    torch.set_num_threads(1)
+    # Ensure all required environment variables are set
+    os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT', '12355')
+    os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR', 'localhost')
+    os.environ['WORLD_SIZE'] = os.environ.get('WORLD_SIZE', '2')
+    os.environ['RANK'] = os.environ.get('RANK', '0')
+    
+    # Initialize the process group
+    dist.init_process_group(
+        "gloo",
+        timeout=datetime.timedelta(minutes=30)
+    )
+    
+    # Set deterministic behavior
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
 
 
 def cleanup():
     dist.destroy_process_group()
 
-
 def main():
-    # The launcher sets LOCAL_RANK and WORLD_SIZE environment variables
-    local_rank = int(os.environ["LOCAL_RANK"])
-    node_rank = int(os.environ["NODE_RANK"])
-    world_size = int(os.environ["WORLD_SIZE"])
+    # Get environment variables with defaults
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    node_rank = int(os.environ.get("NODE_RANK", 0))  # Add default value
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
     
     # Setup distributed
     setup()
