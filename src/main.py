@@ -8,7 +8,7 @@ from torch.utils.data.distributed import DistributedSampler
 from model import TransformerClassifier
 from train import train_model
 from imdb_dataset import IMDBDataset
-from datetime import datetime
+import datetime
 
 def setup():
     """
