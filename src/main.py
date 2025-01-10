@@ -38,8 +38,11 @@ def cleanup():
 def main():
     # Get environment variables with defaults
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    node_rank = int(os.environ.get("NODE_RANK", 0))  # Add default value
+    node_rank = int(os.environ.get("NODE_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
+    
+    # Calculate global rank
+    global_rank = node_rank * int(os.environ.get("NPROC_PER_NODE", 1)) + local_rank
     
     # Setup distributed
     setup()
@@ -48,6 +51,7 @@ def main():
     print(f"Process started with:")
     print(f"- Local Rank: {local_rank}")
     print(f"- Node Rank: {node_rank}")
+    print(f"- Global Rank: {global_rank}")  # Add this line
     print(f"- World Size: {world_size}")
     print(f"- Master addr: {os.environ.get('MASTER_ADDR')}")
     print(f"- Master port: {os.environ.get('MASTER_PORT')}")
@@ -61,7 +65,7 @@ def main():
     # Set device
     device = torch.device('cpu')
     
-    if local_rank == 0:
+    if global_rank == 0:  # Changed from local_rank to global_rank
         print(f"Training on device: {device}")
         print(f"World size: {world_size}")
     
@@ -79,18 +83,18 @@ def main():
         model_name=model_name,
     )
 
-    # Create samplers
+    # Create samplers with global_rank
     train_sampler = DistributedSampler(
         train_dataset,
         num_replicas=world_size,
-        rank=local_rank,
+        rank=global_rank,  # Use global_rank instead of local_rank
         shuffle=True,
         seed=42
     )
     val_sampler = DistributedSampler(
         val_dataset,
         num_replicas=world_size,
-        rank=local_rank,
+        rank=global_rank,  # Use global_rank instead of local_rank
         shuffle=False
     )
 
