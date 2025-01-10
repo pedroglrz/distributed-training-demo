@@ -19,7 +19,7 @@ class IMDBDataset(Dataset):
         del dataset
         gc.collect()
         
-        if self.verbose = True:
+        if self.verbose:
             print(f"[Process {os.getpid()}] Loaded {len(self.texts)} reviews")
         
         # Initialize tokenizer with reduced memory footprint
@@ -56,7 +56,7 @@ class IMDBDataset(Dataset):
         
         processed = self.preprocess(text)
         # Add logging
-        if self.verbose = True:
+        if self.verbose:
             print(f"Dataset accessing index: {idx}")
         return {
             'input_ids': processed['input_ids'],
