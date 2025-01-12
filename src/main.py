@@ -1,47 +1,75 @@
+"""Distributed training entry point for IMDB sentiment analysis.
+
+This module handles the distributed training setup and coordination between processes,
+implementing DistributedDataParallel (DDP) for efficient multi-node training.
+"""
+
+import datetime
+import logging
 import os
+from typing import Tuple, Optional
+
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel
 
 from model import TransformerClassifier
 from train import train_model
 from imdb_dataset import IMDBDataset
 
+logger = logging.getLogger(__name__)
 
-def setup(rank, world_size):
-    """
-    Initialize the distributed environment for single machine.
-    """
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+def setup_logging() -> None:
+    """Configure logging for the distributed training process."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - [%(levelname)s] - %(message)s',
+        handlers=[
+            logging.StreamHandler()
+        ]
+    )
+
+def setup_distributed() -> None:
+    """Initialize the distributed training environment."""
+    os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT', '12355')
+    os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR', 'localhost')
+    os.environ['WORLD_SIZE'] = os.environ.get('WORLD_SIZE', '2')
+    os.environ['RANK'] = os.environ.get('RANK', '0')
     
-    # Using gloo backend for CPU training
     dist.init_process_group(
         "gloo",
-        rank=rank,
-        world_size=world_size
+        timeout=datetime.timedelta(minutes=30)
     )
     
-    # Set device
-    torch.set_num_threads(1)  # Important for CPU training
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
 
-def cleanup():
+def cleanup_distributed() -> None:
+    """Clean up the distributed training environment."""
     dist.destroy_process_group()
 
-def train_process(rank, world_size, model_name, max_length, batch_size, num_epochs):
-    # Initialize process group
-    setup(rank, world_size)
+def get_rank_info() -> Tuple[int, int, int, int]:
+    """Get process rank information for distributed training."""
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    node_rank = int(os.environ.get("NODE_RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
     
-    # Set device
-    device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
+    procs_per_node = int(os.environ.get("NPROC_PER_NODE", 1))
+    global_rank = node_rank * procs_per_node + local_rank
     
-    if rank == 0:
-        print(f"Training on device: {device}")
-    
-    # Create datasets
+    return local_rank, node_rank, global_rank, world_size
+
+def create_dataloaders(
+    global_rank: int,
+    world_size: int,
+    batch_size: int,
+    max_length: int,
+    model_name: str
+) -> Tuple[DataLoader, DataLoader]:
+    """Create distributed DataLoaders for training and validation."""
     train_dataset = IMDBDataset(
         split="train",
         max_length=max_length,
@@ -55,27 +83,25 @@ def train_process(rank, world_size, model_name, max_length, batch_size, num_epoc
         model_name=model_name,
     )
 
-    # Create samplers with deterministic shuffling
     train_sampler = DistributedSampler(
         train_dataset,
         num_replicas=world_size,
-        rank=rank,
+        rank=global_rank,
         shuffle=True,
         seed=42
     )
     val_sampler = DistributedSampler(
         val_dataset,
         num_replicas=world_size,
-        rank=rank,
+        rank=global_rank,
         shuffle=False
     )
 
-    # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         sampler=train_sampler,
-        num_workers=0,  # Increased for better CPU utilization
+        num_workers=0,
         pin_memory=True,
         drop_last=True
     )
@@ -87,40 +113,60 @@ def train_process(rank, world_size, model_name, max_length, batch_size, num_epoc
         pin_memory=True,
         drop_last=True        
     )
-
-    # Create model
-    model = TransformerClassifier(model_name=model_name).to(device)
     
-    # Properly wrap model in DDP
-    model = DistributedDataParallel(
-        model,
-        device_ids=None,  # None for CPU
-        output_device=None  # None for CPU
+    logger.info(f"Total dataset size: {len(train_dataset)}")
+    logger.info(f"Samples per process: {len(train_loader)}")
+
+    # Print first few indices that this process will handle
+    indices = list(train_loader.sampler)[:5]
+    logger.info(f"First 5 indices for process {global_rank}: {indices}")
+    
+    return train_loader, val_loader
+
+def main() -> None:
+    """Main entry point for distributed training."""
+    setup_logging()
+    setup_distributed()
+    
+    local_rank, node_rank, global_rank, world_size = get_rank_info()
+    
+    logger.info(
+        f"Distributed setup:\n"
+        f"- Local Rank: {local_rank}\n"
+        f"- Node Rank: {node_rank}\n"
+        f"- Global Rank: {global_rank}\n"
+        f"- World Size: {world_size}\n"
+        f"- Master addr: {os.environ.get('MASTER_ADDR')}\n"
+        f"- Master port: {os.environ.get('MASTER_PORT')}"
     )
-
-    # Train model
-    train_model(model, train_loader, val_loader, device, num_epochs)
     
-    # Cleanup
-    cleanup()
-
-def main():
     model_name = "distilbert-base-uncased"
     max_length = 256
-    batch_size = 4  # Reduced for CPU training
+    batch_size = 4
     num_epochs = 2
-    world_size = 2  # Number of processes
-
-    # Set multiprocessing start method
-    mp.set_start_method('spawn', force=True)
-
-    # Launch processes
-    mp.spawn(
-        train_process,
-        args=(world_size, model_name, max_length, batch_size, num_epochs),
-        nprocs=world_size,
-        join=True
+    
+    device = torch.device('cpu')
+    if global_rank == 0:
+        logger.info(f"Training on device: {device}")
+    
+    train_loader, val_loader = create_dataloaders(
+        global_rank, world_size, batch_size, max_length, model_name
     )
+    
+    model = TransformerClassifier(model_name=model_name).to(device)
+    model = DistributedDataParallel(
+        model,
+        device_ids=None,
+        output_device=None
+    )
+
+    try:
+        train_model(model, train_loader, val_loader, device, num_epochs, global_rank)
+    except Exception as e:
+        logger.error(f"Training failed: {str(e)}")
+        raise
+    finally:
+        cleanup_distributed()
 
 if __name__ == "__main__":
     main()

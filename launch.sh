@@ -1,13 +1,41 @@
 #!/bin/bash
 
-# Set master IP at the top of the script
-MASTER_IP="10.0.0.1"  # Replace with your actual master node IP
-NODE_RANK=$1
+# Configuration for AWS instances
+MASTER_IP="172.31.21.7"  # Replace with dlp-node-0's private IP
+NODE_RANK=$1  # Will be 0 for master node, 1 for worker
+NUM_NODES=2
+PROCS_PER_NODE=1
+MASTER_PORT=12355
 
-python -m torch.distributed.launch \
-    --nnodes=2 \
+# Add error checking
+if [ -z "$MASTER_IP" ]; then
+    echo "Error: MASTER_IP not set"
+    exit 1
+fi
+
+if [ -z "$NODE_RANK" ]; then
+    echo "Error: NODE_RANK not provided"
+    exit 1
+fi
+
+# Export necessary environment variables
+export NODE_RANK=$NODE_RANK
+export MASTER_ADDR=$MASTER_IP
+export MASTER_PORT=$MASTER_PORT
+
+# Log the configuration
+echo "Starting distributed training with:"
+echo "- Master IP: $MASTER_IP"
+echo "- Node Rank: $NODE_RANK"
+echo "- Num Nodes: $NUM_NODES"
+echo "- Processes per Node: $PROCS_PER_NODE"
+echo "- Master Port: $MASTER_PORT"
+
+# Launch training using torchrun
+torchrun \
+    --nnodes=$NUM_NODES \
     --node_rank=$NODE_RANK \
-    --nproc_per_node=1 \
+    --nproc_per_node=$PROCS_PER_NODE \
     --master_addr=$MASTER_IP \
-    --master_port=12355 \
-    main.py
+    --master_port=$MASTER_PORT \
+    src/main.py    
